@@ -1,0 +1,289 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>SPPREV – Análise de Aposentadoria (Professor)</title>
+  <style>
+    :root { font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif; }
+    body { margin: 24px; max-width: 980px; }
+    h1 { font-size: 20px; margin: 0 0 8px; }
+    .muted { color: #666; font-size: 12px; }
+    .card { border: 1px solid #e5e5e5; border-radius: 14px; padding: 14px; margin: 14px 0; }
+    label { display:block; font-size: 12px; font-weight: 600; margin: 10px 0 6px; }
+    input, textarea, select {
+      width: 100%; padding: 10px 12px; border: 1px solid #ccc; border-radius: 10px;
+      font-size: 14px; box-sizing: border-box;
+    }
+    textarea { min-height: 160px; resize: vertical; }
+    .grid { display:grid; grid-template-columns: repeat(2, minmax(0,1fr)); gap: 12px; }
+    .full { grid-column: 1 / -1; }
+    .row { display:flex; gap:10px; flex-wrap: wrap; align-items: center; margin-top: 12px; }
+    button {
+      padding: 10px 14px; border: 1px solid #ccc; border-radius: 12px;
+      background: #fff; cursor: pointer; font-weight: 600;
+    }
+    button:hover { background: #f6f6f6; }
+    pre { white-space: pre-wrap; word-wrap: break-word; margin: 0; }
+    .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace; }
+  </style>
+</head>
+<body>
+
+  <h1>SPPREV – Análise de Aposentadoria (Professor)</h1>
+  <div class="muted">Gera um prompt e (opcionalmente) envia para a IA via backend seguro (Vercel).</div>
+
+  <div class="card">
+    <div class="grid">
+      <div>
+        <label for="sexo">Sexo</label>
+        <select id="sexo">
+          <option value="homem" selected>homem</option>
+          <option value="mulher">mulher</option>
+        </select>
+      </div>
+
+      <div>
+        <label for="nascimento">Data de nascimento</label>
+        <input id="nascimento" type="text" value="04/11/1971" placeholder="DD/MM/AAAA" />
+      </div>
+
+      <div>
+        <label for="ingresso">Ingresso no serviço público (SP)</label>
+        <input id="ingresso" type="text" value="1995" placeholder="ex.: 1995" />
+      </div>
+
+      <div>
+        <label for="regime">Regime previdenciário</label>
+        <input id="regime" type="text" value="SPPREV" />
+      </div>
+
+      <div class="full">
+        <label for="vinculo">Regime jurídico / vínculo</label>
+        <input id="vinculo" type="text" value="Lei 500/74 – Categoria F (OFA), categoria permanente (conforme holerite)" />
+      </div>
+
+      <div>
+        <label for="cargo">Cargo / função</label>
+        <input id="cargo" type="text" value="Professor Educação Básica II" />
+      </div>
+
+      <div>
+        <label for="tempo_dias">Tempo total (dias)</label>
+        <input id="tempo_dias" type="number" value="9439" />
+      </div>
+
+      <div class="full">
+        <label for="periodo_fora">Período fora do estado</label>
+        <input id="periodo_fora" type="text" value="2001 a 2004, mas com vínculo mantido" />
+      </div>
+
+      <div class="full">
+        <label for="licenca">Licença médica</label>
+        <input id="licenca" type="text" value="13 anos afastado, com contribuição integral durante todo o período" />
+      </div>
+
+      <div class="full">
+        <label for="readaptacao">Readaptação</label>
+        <input id="readaptacao" type="text" value="por 1 ano a partir de 09/03/2026 (restrição à sala de aula, sem regência)" />
+      </div>
+
+      <div class="full">
+        <label for="marco">Data marco para calcular idade</label>
+        <input id="marco" type="text" value="04/11/2031" placeholder="DD/MM/AAAA" />
+      </div>
+
+      <div class="full">
+        <label for="texto_extra">Texto oficial / simulador (cole aqui se tiver)</label>
+        <textarea id="texto_extra" placeholder="Cole aqui trechos do Simulador SPPREV: regra indicada, tempo no magistério, etc."></textarea>
+        <div class="muted">Quanto mais oficial você colar aqui, menos “suposições” serão necessárias.</div>
+      </div>
+
+      <div class="full">
+        <label for="prompt_final">Prompt final</label>
+        <textarea id="prompt_final" class="mono" placeholder="Clique em 'Gerar prompt'..."></textarea>
+      </div>
+    </div>
+
+    <div class="row">
+      <button id="btnGerar" type="button">Gerar prompt</button>
+      <button id="btnCopiar" type="button">Copiar prompt</button>
+      <button id="btnEnviar" type="button">Enviar para IA</button>
+      <span id="status" class="muted" aria-live="polite"></span>
+    </div>
+  </div>
+
+  <div class="card">
+    <label>Resposta da IA</label>
+    <pre id="resposta" class="mono">(vazio)</pre>
+  </div>
+
+<script>
+  function calcIdade(nascStr, alvoStr) {
+    const [dn, mn, an] = (nascStr || "").split("/").map(Number);
+    const [da, ma, aa] = (alvoStr || "").split("/").map(Number);
+    if (![dn,mn,an,da,ma,aa].every(Number.isFinite)) return null;
+
+    const nasc = new Date(an, mn - 1, dn);
+    const alvo = new Date(aa, ma - 1, da);
+
+    let idade = alvo.getFullYear() - nasc.getFullYear();
+    const m = alvo.getMonth() - nasc.getMonth();
+    if (m < 0 || (m === 0 && alvo.getDate() < nasc.getDate())) idade--;
+    return idade;
+  }
+
+  function diasParaAMD(dias) {
+    const anos = Math.floor(dias / 365);
+    const resto = dias % 365;
+    const meses = Math.floor(resto / 30);
+    const d = resto % 30;
+    return { anos, meses, dias: d };
+  }
+
+  function getDados() {
+    return {
+      sexo: document.getElementById("sexo").value,
+      nascimento: document.getElementById("nascimento").value.trim(),
+      ingresso: document.getElementById("ingresso").value.trim(),
+      regime: document.getElementById("regime").value.trim(),
+      vinculo: document.getElementById("vinculo").value.trim(),
+      cargo: document.getElementById("cargo").value.trim(),
+      tempo_dias: Number(document.getElementById("tempo_dias").value || 0),
+      periodo_fora: document.getElementById("periodo_fora").value.trim(),
+      licenca: document.getElementById("licenca").value.trim(),
+      readaptacao: document.getElementById("readaptacao").value.trim(),
+      marco: document.getElementById("marco").value.trim(),
+      texto_extra: document.getElementById("texto_extra").value || ""
+    };
+  }
+
+  function gerarPrompt(d) {
+    const idade = calcIdade(d.nascimento, d.marco);
+    const amd = diasParaAMD(d.tempo_dias);
+    const idadeTxt = (idade === null) ? "(não consegui calcular — confira datas)" : `${idade} anos`;
+    const tempoTxt = `${d.tempo_dias} dias (~ ${amd.anos} anos, ${amd.meses} meses, ${amd.dias} dias; conversão aproximada)`;
+
+    const extra = (d.texto_extra || "").trim();
+    const blocoExtra = extra ? `\n\nTRECHOS OFICIAIS / SIMULADOR (fornecidos por mim):\n${extra}\n` : "";
+
+    return `Você é um assistente especializado em regras de aposentadoria do Regime Próprio de Previdência Social do Estado de São Paulo (SPPREV) para professores da educação básica.
+
+Objetivo:
+1) Estimar a primeira data possível para aposentadoria;
+2) Indicar qual regra/transição provavelmente se aplica (EC 103/2019, LC 1.354/2020, LC 1.380/2022, idade mínima progressiva, pontos, pedágio 100% etc.);
+3) Explicar se há direito a paridade e integralidade (e em quais condições);
+4) Listar, em tópicos claros, quais requisitos ainda faltam cumprir (idade, tempo total, tempo no magistério, vínculo, cargo etc.).
+
+Regras obrigatórias de resposta:
+- Não invente leis, artigos, requisitos, datas ou “regras do SPPREV” sem base no que eu fornecer.
+- Se faltar informação ou texto oficial, diga claramente “não dá para afirmar com segurança” e me diga exatamente o que consultar no Simulador SPPREV (telas/campos).
+- Explique com linguagem acessível, mas tecnicamente correta.
+- Responda com subtítulos e bullets.
+- Se houver cenários diferentes (pontos, pedágio, idade progressiva), liste alternativas e o que muda em cada uma.
+- Quando fizer contas (idade/tempo), mostre a conta de forma simples.
+
+MEUS DADOS:
+- Sexo: ${d.sexo}
+- Data de nascimento: ${d.nascimento}
+- Ingresso no serviço público no Estado de São Paulo: ${d.ingresso}
+- Regime previdenciário: ${d.regime}
+- Regime jurídico/vínculo: ${d.vinculo}
+- Cargo/função: ${d.cargo}
+- Tempo total informado: ${tempoTxt}
+- Período fora do estado: ${d.periodo_fora}
+- Licença médica: ${d.licenca}
+- Readaptação: ${d.readaptacao}
+
+TAREFAS:
+1) Calcule minha idade em ${d.marco} (minha idade nesse dia é: ${idadeTxt}) e diga se isso é um marco relevante para idade mínima progressiva de professor nas regras vigentes em 2026.
+   - Se você não tiver a regra oficial no que eu forneci, peça que eu cole o print/trecho do simulador SPPREV onde aparece “idade mínima”/“regra aplicável”.
+
+2) Compare meu tempo total (${tempoTxt}) com requisitos de tempo total e tempo de magistério que apareçam em normas oficiais/print do simulador que eu fornecer.
+   - Se os requisitos exatos dependerem de norma/tela oficial, não chute: diga quais telas/trechos eu devo fornecer.
+
+3) Explique se “licença médica com contribuição integral” conta como:
+   a) tempo de contribuição previdenciária;
+   b) efetivo exercício no magistério;
+   e como isso impacta o requisito de “tempo no magistério”.
+
+4) Analise o impacto do vínculo Lei 500/74 (Categoria F/OFA) sobre:
+   - paridade (equiparação com ativos);
+   - integralidade (última remuneração como base);
+   e diga em quais hipóteses isso pode ser possível/limitado.
+   - Se depender de detalhes do vínculo/cargo/regra, peça os campos exatos do simulador.
+
+5) Entregue um resumo final com:
+   - Regra mais provável (com ressalvas);
+   - Data estimada de primeira aposentadoria possível (ou intervalo);
+   - Checklist do que falta cumprir (idade, tempo total, tempo no magistério, carreira, cargo, etc.).
+
+6) Mostre cenários alternativos (se aplicável):
+   - Regra de pontos
+   - Idade mínima progressiva
+   - Pedágio (ex.: 100%)
+   Para cada cenário, diga “o que falta” e uma data aproximada.
+
+7) Se faltar algo para precisão, diga exatamente o que eu devo consultar/colar do Simulador SPPREV, por exemplo:
+   - “Tempo de contribuição (total)”
+   - “Tempo no magistério”
+   - “Carreira/cargo efetivo”
+   - “Histórico de licenças e afastamentos”
+   - “Regra indicada pelo simulador”
+   - “Base de cálculo / média / proventos”
+${blocoExtra}`.trim();
+  }
+
+  const status = document.getElementById("status");
+  const promptFinal = document.getElementById("prompt_final");
+  const respostaEl = document.getElementById("resposta");
+
+  document.getElementById("btnGerar").addEventListener("click", () => {
+    const d = getDados();
+    promptFinal.value = gerarPrompt(d);
+    status.textContent = "Prompt gerado.";
+  });
+
+  document.getElementById("btnCopiar").addEventListener("click", async () => {
+    try {
+      await navigator.clipboard.writeText(promptFinal.value || "");
+      status.textContent = "Copiado.";
+    } catch {
+      status.textContent = "Não consegui copiar automaticamente. Copie manualmente.";
+    }
+  });
+
+  document.getElementById("btnEnviar").addEventListener("click", async () => {
+    const prompt = (promptFinal.value || "").trim();
+    if (!prompt) {
+      status.textContent = "Gere o prompt antes de enviar.";
+      return;
+    }
+
+    status.textContent = "Enviando...";
+    respostaEl.textContent = "(aguardando...)";
+
+    try {
+      const r = await fetch("/api/analyze", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ prompt })
+      });
+
+      const data = await r.json();
+      if (!r.ok) throw new Error(data?.error || "Erro desconhecido");
+
+      respostaEl.textContent = data.output_text || "(sem texto de saída)";
+      status.textContent = "Pronto.";
+    } catch (e) {
+      respostaEl.textContent = `Erro: ${e.message}`;
+      status.textContent = "Falhou.";
+    }
+  });
+
+  // gera ao carregar
+  document.getElementById("btnGerar").click();
+</script>
+
+</body>
+</html
